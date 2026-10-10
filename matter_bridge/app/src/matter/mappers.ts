@@ -4,7 +4,7 @@
  * Every mapper decides which Matter device type and which cluster features an entity gets (derived from the
  * entity's supported features), and how Home Assistant state translates into Matter attributes.
  */
-import type { EndpointType } from "@matter/main";
+import type { Endpoint, EndpointType } from "@matter/main";
 import {
     AirQualityServer,
     BooleanStateServer,
@@ -20,6 +20,7 @@ import {
     RadonConcentrationMeasurementServer,
     RelativeHumidityMeasurementServer,
     SmokeCoAlarmServer,
+    SwitchServer,
     TotalVolatileOrganicCompoundsConcentrationMeasurementServer,
 } from "@matter/main/behaviors";
 import {
@@ -39,6 +40,7 @@ import {
 import {
     AirPurifierDevice,
     AirQualitySensorDevice,
+    CameraDevice,
     ColorTemperatureLightDevice,
     ContactSensorDevice,
     DimmableLightDevice,
@@ -47,6 +49,7 @@ import {
     ExtendedColorLightDevice,
     FanDevice,
     FlowSensorDevice,
+    GenericSwitchDevice,
     HumiditySensorDevice,
     LightSensorDevice,
     ModeSelectDevice,
@@ -65,7 +68,10 @@ import {
     WaterValveDevice,
     WindowCoveringDevice,
 } from "@matter/main/devices";
+import { HaCameraAvStreamManagementServer, HaWebRtcTransportProviderServer } from "../camera/behaviors.js";
+import { CameraSource } from "../camera/source.js";
 import type { HassEntity } from "../ha/types.js";
+import { log } from "../log.js";
 import {
     HaColorControlServer,
     HaDoorLockServer,
@@ -123,6 +129,10 @@ export interface DeviceMapper {
     signature(entity: HassEntity): string;
     create(entity: HassEntity, ctx: EntityContext): MappedDevice;
     update(entity: HassEntity, ctx: EntityContext): StatePatch;
+    /** Optional side effects after a state change (e.g. emitting button press events) */
+    react?(entity: HassEntity, ctx: EntityContext, endpoint: Endpoint): void;
+    /** Optional hook after the endpoint was added to the bridge */
+    attach?(endpoint: Endpoint, ctx: EntityContext): void;
 }
 
 const attr = (entity: HassEntity, name: string) => entity.attributes?.[name];
@@ -1533,6 +1543,146 @@ function smokeCoMapper(id: string, label: string, classes: string[], co: boolean
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Buttons and doorbells (event entities) -> Matter generic switch with press events
+// ---------------------------------------------------------------------------------------------------------------
+
+type PressKind = "single" | "double" | "long";
+
+function pressKind(eventType: string): PressKind {
+    const t = eventType.toLowerCase();
+    if (/double|2_press|second/.test(t)) return "double";
+    if (/long|hold/.test(t)) return "long";
+    return "single";
+}
+
+/** Simulates a physical button by driving the switch position; matter.js derives the Matter events from it */
+function simulatePress(endpoint: Endpoint, kind: PressKind) {
+    const set = (rawPosition: number) =>
+        endpoint.set({ switch: { rawPosition } } as any).catch(e => log.warn(`Button press failed: ${e instanceof Error ? e.message : e}`));
+    const steps: Array<[number, number]> =
+        kind === "double"
+            ? [[0, 1], [100, 0], [200, 1], [300, 0]]
+            : kind === "long"
+              ? [[0, 1], [2300, 0]]
+              : [[0, 1], [100, 0]];
+    for (const [delay, position] of steps) setTimeout(() => void set(position), delay);
+}
+
+const buttonMapper: DeviceMapper = {
+    id: "button",
+    label: "Taster / Türklingel (Drücken, Doppelt, Lang)",
+    domains: ["event", "binary_sensor"],
+    auto: entity => entity.entity_id.startsWith("event."),
+    signature: () => "button",
+    create(entity, ctx) {
+        ctx.lastEventState = entity.state;
+        return {
+            type: GenericSwitchDevice.with(
+                SwitchServer.with(
+                    "MomentarySwitch",
+                    "MomentarySwitchRelease",
+                    "MomentarySwitchLongPress",
+                    "MomentarySwitchMultiPress",
+                ),
+            ),
+            state: { switch: { numberOfPositions: 2, currentPosition: 0, multiPressMax: 2 } },
+        };
+    },
+    update() {
+        return {};
+    },
+    attach(endpoint, ctx) {
+        const events = (endpoint.events as any).switch;
+        for (const name of ["initialPress", "shortRelease", "multiPressComplete", "longPress", "longRelease"]) {
+            events?.[name]?.on((payload: any) => {
+                const count = payload?.totalNumberOfPressesCounted;
+                log.info(`[${ctx.entityId}] Matter event ${name}${count ? ` (${count}x)` : ""}`);
+            });
+        }
+    },
+    react(entity, ctx, endpoint) {
+        const previous = ctx.lastEventState;
+        ctx.lastEventState = entity.state;
+        if (!available(entity) || previous === undefined || previous === entity.state) return;
+        const domain = ctx.domain;
+        if (domain === "binary_sensor") {
+            if (entity.state === "on") simulatePress(endpoint, "single");
+            return;
+        }
+        // event entities: the state is the timestamp of the last event
+        if (previous === "unavailable" || previous === "unknown") {
+            if (domain === "event" && !attr(entity, "event_type")) return;
+        }
+        simulatePress(endpoint, pressKind(String(attr(entity, "event_type") ?? "")));
+    },
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Cameras (Matter 1.5): live video/audio via WebRTC and snapshots
+// ---------------------------------------------------------------------------------------------------------------
+
+const LIVE_VIEW = 3; // StreamUsage.LiveView
+const H264 = 0;
+const OPUS = 0;
+const JPEG = 0;
+
+const cameraMapper: DeviceMapper = {
+    id: "camera",
+    label: "Kamera (Live-Video, Ton, Schnappschuss – Matter 1.5)",
+    domains: ["camera"],
+    auto: entity => entity.entity_id.startsWith("camera."),
+    signature: () => "camera",
+    create(entity, ctx) {
+        setupOnOff(ctx);
+        const url = ctx.settings.streamUrl;
+        ctx.camera = new CameraSource(ctx.entityId, url ? url : () => ctx.ha.cameraStreamUrl(ctx.entityId));
+        const width = 1920;
+        const height = 1080;
+        return {
+            type: CameraDevice.with(HaCameraAvStreamManagementServer, HaWebRtcTransportProviderServer),
+            state: {
+                cameraAvStreamManagement: {
+                    maxContentBufferSize: 4_000_000,
+                    maxNetworkBandwidth: 20_000_000,
+                    supportedStreamUsages: [LIVE_VIEW],
+                    streamUsagePriorities: [LIVE_VIEW],
+                    maxConcurrentEncoders: 1,
+                    maxEncodedPixelRate: width * height * 30,
+                    videoSensorParams: { sensorWidth: width, sensorHeight: height, maxFps: 30 },
+                    minViewportResolution: { width: 320, height: 180 },
+                    rateDistortionTradeOffPoints: [
+                        { codec: H264, resolution: { width, height }, minBitRate: 500_000 },
+                        { codec: H264, resolution: { width: 640, height: 360 }, minBitRate: 150_000 },
+                    ],
+                    currentFrameRate: 15,
+                    allocatedVideoStreams: [],
+                    viewport: { x1: 0, y1: 0, x2: width, y2: height },
+                    microphoneCapabilities: {
+                        maxNumberOfChannels: 2,
+                        supportedCodecs: [OPUS],
+                        supportedSampleRates: [48000],
+                        supportedBitDepths: [16],
+                    },
+                    allocatedAudioStreams: [],
+                    microphoneMuted: false,
+                    microphoneVolumeLevel: 254,
+                    microphoneMaxLevel: 254,
+                    microphoneMinLevel: 0,
+                    snapshotCapabilities: [
+                        { resolution: { width, height }, maxFrameRate: 1, imageCodec: JPEG, requiresEncodedPixels: false },
+                    ],
+                    allocatedSnapshotStreams: [],
+                },
+                webRtcTransportProvider: { currentSessions: [] },
+            },
+        };
+    },
+    update() {
+        return {};
+    },
+};
+
+// ---------------------------------------------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -1560,6 +1710,8 @@ export const MAPPERS: DeviceMapper[] = [
     smokeCoMapper("co_alarm", "CO-/Gasmelder", ["carbon_monoxide", "gas"], true),
     contactMapper,
     rainMapper,
+    buttonMapper,
+    cameraMapper,
     onOffMapper("outlet", "Steckdose / Schalter (Ein/Aus)", OutletType, [
         "switch",
         "input_boolean",

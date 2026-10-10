@@ -55,6 +55,8 @@ Der Matter-Gerätetyp und dessen Funktionen werden automatisch aus den Fähigkei
 | `sensor` | Temperatur-, Feuchte-, Helligkeits-, Luftdruck-, Durchfluss- oder Luftqualitätssensor | Messwerte inkl. Einheitenumrechnung (°F, inHg, L/min …); Luftqualität für CO₂, CO, PM1, PM2.5, PM10, VOC, NO₂, O₃, Formaldehyd, Radon und AQI |
 | `binary_sensor` | Kontakt-, Bewegungs-, Wasserleck-, Frost-, Rauch- oder CO-Melder | Zustand je nach Geräteklasse |
 | `person`, `device_tracker` | Präsenzmelder | Zuhause / abwesend |
+| `event` (z. B. Türklingel, Taster) | Taster | Einfach-, Doppel- und Langdruck als Matter-Ereignisse |
+| `camera` | Kamera (Matter 1.5) | Live-Video (H.264) und Ton (Opus) über WebRTC, Schnappschüsse; siehe unten |
 
 Über die Web-Oberfläche lassen sich weitere Kombinationen wählen, zum Beispiel:
 
@@ -66,6 +68,31 @@ Der Matter-Gerätetyp und dessen Funktionen werden automatisch aus den Fähigkei
 Wird eine Entität vorübergehend `unavailable`, meldet die Bridge sie in Matter als „nicht erreichbar“ und behält
 ihre Funktionen bei. Ändern sich die Fähigkeiten einer Entität (z. B. neue Farbmodi), wird das Matter-Gerät
 automatisch neu aufgebaut.
+
+## Kameras (Matter 1.5)
+
+Kameras werden als **Matter-Kamera** bereitgestellt: Live-Bild mit Ton über WebRTC und Schnappschüsse.
+
+> **Wichtig:** Matter-Kameras sind neu. Stand Mitte 2026 zeigt nur **SmartThings** sie an; **Apple Home,
+> Google Home und Alexa** haben die Unterstützung angekündigt, aber noch nicht freigeschaltet. Die Kamera
+> erscheint dort erst nach einem entsprechenden Update der Controller.
+> Wer das Live-Bild **jetzt schon in Apple Home** möchte, nutzt zusätzlich die Integration *HomeKit Bridge*
+> von Home Assistant (Modus „Accessory“).
+
+**Einrichtung am Beispiel Tapo C-/TC-Kameras (z. B. TC70):**
+
+1. In der Tapo-App unter *Kameraeinstellungen → Erweiterte Einstellungen → Kamera-Konto* Benutzer und
+   Passwort anlegen.
+2. In der Web-Oberfläche der Bridge bei der `camera.…`-Entität die RTSP-Adresse eintragen, z. B.
+   `rtsp://BENUTZER:PASSWORT@192.168.1.50:554/stream1` (`stream2` = geringere Auflösung, weniger Last).
+   Ohne Eintrag verwendet die Bridge den Stream von Home Assistant (HLS, etwas mehr Verzögerung).
+   Zum Entfernen einer gespeicherten Adresse `-` eingeben.
+3. Bewegungs-/Personenerkennung (`binary_sensor`), Privatsphäre-Modus (`switch`) und Sirene (`siren`) der
+   Kamera können zusätzlich als eigene Matter-Geräte bereitgestellt werden.
+
+Technik: Die Bridge liest den Kamerastream mit ffmpeg, übernimmt H.264 ohne Neukodierung (andere Codecs werden
+nach H.264 umgewandelt) und kodiert den Ton nach Opus. ffmpeg läuft nur, solange jemand zuschaut. Für
+Schnappschüsse wird Matter über TCP benötigt (Option `matter_tcp`, standardmäßig aktiv).
 
 ## Optionen
 
@@ -80,6 +107,7 @@ automatisch neu aufgebaut.
 | `include_labels` | Labels, deren Entitäten/Geräte automatisch bereitgestellt werden (Standard: `matter`) |
 | `exclude_entities` | Entitäten, die nie automatisch bereitgestellt werden |
 | `exclude_hidden` | Versteckte sowie Konfigurations-/Diagnose-Entitäten bei Domain-Regeln ignorieren |
+| `matter_tcp` | Matter über TCP für große Nachrichten (Kamera-Schnappschüsse); nur bei Problemen abschalten |
 
 ## Voraussetzungen und Hinweise
 

@@ -29,3 +29,6 @@ configuration:
   exclude_hidden:
     name: Versteckte Entitäten ignorieren
     description: Versteckte Entitäten sowie Konfigurations- und Diagnose-Entitäten werden bei Domain-Regeln übersprungen.
+  matter_tcp:
+    name: Matter über TCP
+    description: Erlaubt große Matter-Nachrichten über TCP (z. B. Kamera-Schnappschüsse). Nur deaktivieren, wenn ein Controller damit Probleme hat.

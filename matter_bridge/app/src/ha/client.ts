@@ -212,6 +212,39 @@ export class HomeAssistantClient extends EventEmitter {
         return this.request({ type: "call_service", domain, service, service_data: data });
     }
 
+    /** HTTP base URL of the Home Assistant REST API, derived from the WebSocket URL */
+    get apiUrl() {
+        return this.url
+            .replace(/^ws/, "http")
+            .replace(/\/core\/websocket$/, "/core/api")
+            .replace(/\/api\/websocket$/, "/api");
+    }
+
+    /** Server base URL (without /api), used for relative URLs such as HLS playlists */
+    get baseUrl() {
+        return this.apiUrl.replace(/\/api$/, "");
+    }
+
+    /** Fetches the current image of a camera entity */
+    async cameraImage(entityId: string, width?: number, height?: number): Promise<Buffer> {
+        const params = new URLSearchParams();
+        if (width) params.set("width", String(width));
+        if (height) params.set("height", String(height));
+        const query = params.size ? `?${params}` : "";
+        const response = await fetch(`${this.apiUrl}/camera_proxy/${entityId}${query}`, {
+            headers: { Authorization: `Bearer ${this.token}` },
+            signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) throw new Error(`camera_proxy returned ${response.status}`);
+        return Buffer.from(await response.arrayBuffer());
+    }
+
+    /** Returns an HLS stream URL of a camera entity (requires the camera to support streaming) */
+    async cameraStreamUrl(entityId: string): Promise<string> {
+        const result = await this.request<{ url: string }>({ type: "camera/stream", entity_id: entityId, format: "hls" });
+        return result.url.startsWith("http") ? result.url : `${this.baseUrl}${result.url}`;
+    }
+
     // Registry helpers ------------------------------------------------------------------------------------------
 
     friendlyName(entityId: string): string {

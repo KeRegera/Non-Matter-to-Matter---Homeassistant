@@ -1,5 +1,5 @@
 name: Matter Bridge
-version: "1.0.0"
+version: "1.1.0"
 slug: matter_bridge
 description: Stellt beliebige Home-Assistant-Geräte (auch Nicht-Matter-Geräte) als Matter-Geräte bereit
 url: https://github.com/KeRegera/Non-Matter-to-Matter---Homeassistant
@@ -25,6 +25,7 @@ options:
     - matter
   exclude_entities: []
   exclude_hidden: true
+  matter_tcp: true
 schema:
   log_level: list(debug|info|warning|error)
   bridge_name: str
@@ -39,3 +40,4 @@ schema:
   exclude_entities:
     - str
   exclude_hidden: bool
+  matter_tcp: bool

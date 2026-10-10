@@ -7,6 +7,7 @@ import { type AddonOptions, type ConfigStore, DATA_DIR } from "../config.js";
 import type { HomeAssistantClient } from "../ha/client.js";
 import type { HassEntity } from "../ha/types.js";
 import { log } from "../log.js";
+import { closeCameraSessions } from "../camera/behaviors.js";
 import { EntityContext, registerContext, unregisterContext } from "./context.js";
 import { truncate } from "./convert.js";
 import { type DeviceMapper, selectMapper } from "./mappers.js";
@@ -18,6 +19,8 @@ interface BridgedDevice {
     signature: string;
     context: EntityContext;
     name: string;
+    /** Settings that require rebuilding the endpoint when changed */
+    settingsKey: string;
 }
 
 export interface ExposureDecision {
@@ -29,7 +32,7 @@ export interface ExposureDecision {
 const VERSION = process.env.BRIDGE_VERSION ?? "1.0.0";
 
 /** Domains that are never exposed automatically (they have no useful Matter representation) */
-const NEVER_AUTO = new Set(["persistent_notification", "zone", "sun", "update", "conversation", "tts", "stt", "event", "image", "todo", "calendar", "tag", "wake_word", "ai_task"]);
+const NEVER_AUTO = new Set(["persistent_notification", "zone", "sun", "update", "conversation", "tts", "stt", "image", "todo", "calendar", "tag", "wake_word", "ai_task"]);
 
 export class MatterBridge {
     server?: ServerNode;
@@ -54,7 +57,7 @@ export class MatterBridge {
         const name = truncate(this.options.bridge_name || "HA Matter Bridge", 32);
         this.server = await ServerNode.create({
             id: "ha-matter-bridge",
-            network: { port: this.options.port },
+            network: { port: this.options.port, tcp: this.options.matter_tcp },
             commissioning: {
                 passcode: this.credentials.passcode,
                 discriminator: this.credentials.discriminator,
@@ -197,7 +200,13 @@ export class MatterBridge {
             const entity = this.effectiveEntity(entityId)!;
             const signature = mapper.signature(entity);
             const name = this.#name(entityId);
-            if (existing && existing.mapper === mapper && existing.signature === signature && existing.name === name) {
+            if (
+                existing &&
+                existing.mapper === mapper &&
+                existing.signature === signature &&
+                existing.name === name &&
+                existing.settingsKey === this.#settingsKey(entityId)
+            ) {
                 existing.context.alarmCode = this.store.settings(entityId).code;
                 continue;
             }
@@ -205,6 +214,10 @@ export class MatterBridge {
             await this.#add(entityId, mapper);
         }
         log.info(`Bridge exposes ${this.devices.size} device(s)`);
+    }
+
+    #settingsKey(entityId: string) {
+        return JSON.stringify({ streamUrl: this.store.settings(entityId).streamUrl ?? "" });
     }
 
     #name(entityId: string) {
@@ -218,6 +231,7 @@ export class MatterBridge {
         const endpointId = entityId.replace(/[^a-zA-Z0-9_]/g, "_");
         const context = new EntityContext(entityId, this.ha);
         context.alarmCode = this.store.settings(entityId).code;
+        context.settings = this.store.settings(entityId);
         registerContext(endpointId, context);
 
         try {
@@ -241,6 +255,7 @@ export class MatterBridge {
                 },
             } as any);
             await this.aggregator.add(endpoint);
+            mapper.attach?.(endpoint, context);
             // Persisted Matter state may be outdated - always apply the current Home Assistant state
             if (entity.state !== "unavailable") await this.#applyState(endpoint, mapper.update(entity, context));
             this.devices.set(entityId, {
@@ -250,11 +265,13 @@ export class MatterBridge {
                 signature: mapper.signature(entity),
                 context,
                 name,
+                settingsKey: this.#settingsKey(entityId),
             });
             this.#lastErrors.delete(entityId);
             if (entity.state !== "unavailable") this.store.cacheAttributes(entityId, mapper.signature(entity), entity.attributes);
             log.info(`Added ${entityId} as "${mapper.label}"`);
         } catch (e) {
+            context.camera?.stop();
             unregisterContext(endpointId);
             const message = e instanceof Error ? e.message : String(e);
             this.#lastErrors.set(entityId, message);
@@ -270,6 +287,8 @@ export class MatterBridge {
         } catch (e) {
             log.warn(`Could not remove ${device.entityId}`, e);
         }
+        device.context.camera?.stop();
+        closeCameraSessions(device.endpoint.id);
         unregisterContext(device.endpoint.id);
         log.info(`Removed ${device.entityId}`);
     }
@@ -306,6 +325,7 @@ export class MatterBridge {
 
         try {
             await this.#applyState(device.endpoint, device.mapper.update(effective, device.context));
+            device.mapper.react?.(effective, device.context, device.endpoint);
         } catch (e) {
             log.warn(`Could not update ${entityId}: ${e instanceof Error ? e.message : e}`);
         }

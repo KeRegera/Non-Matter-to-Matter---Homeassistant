@@ -46,15 +46,25 @@ export const states = [
     s("person.me", "home"),
     s("input_number.level", "30", { min: 0, max: 100, step: 1 }),
     s("light.offline", "unavailable", {}),
+    s("camera.tc70", "idle", { supported_features: 2, brand: "TP-Link", model_name: "Tapo C200" }),
+    s("event.doorbell", "unknown", { device_class: "doorbell", event_types: ["ring"] }),
 ];
 
 const map = new Map(states.map(e => [e.entity_id, e]));
 export const calls = [];
 
+// state_changed subscriptions of all connections
+const subscribers = new Set();
+const broadcast = event => {
+    for (const { ws, id } of subscribers) ws.send(JSON.stringify({ id, type: "event", event }));
+};
+
 const wss = new WebSocketServer({ port });
 wss.on("connection", ws => {
     const send = m => ws.send(JSON.stringify(m));
-    const subs = [];
+    ws.on("close", () => {
+        for (const s of [...subscribers]) if (s.ws === ws) subscribers.delete(s);
+    });
     send({ type: "auth_required", ha_version: "mock" });
     ws.on("message", raw => {
         const m = JSON.parse(raw.toString());
@@ -67,8 +77,20 @@ wss.on("connection", ws => {
             case "config/area_registry/list": return ok([{ area_id: "living", name: "Wohnzimmer" }]);
             case "config/label_registry/list": return ok([]);
             case "get_states": return ok([...map.values()]);
-            case "subscribe_events": subs.push(m.id); return ok(null);
+            case "subscribe_events":
+                if (m.event_type === "state_changed") subscribers.add({ ws, id: m.id });
+                return ok(null);
             case "call_service": {
+                // Test hook: mock.set_state changes an entity and broadcasts state_changed
+                if (m.domain === "mock" && m.service === "set_state") {
+                    const { entity_id, state, attributes } = m.service_data;
+                    const old = map.get(entity_id);
+                    const n = { ...(old ?? { entity_id, attributes: {} }), state, attributes: { ...(old?.attributes ?? {}), ...(attributes ?? {}) } };
+                    map.set(entity_id, n);
+                    ok({});
+                    broadcast({ event_type: "state_changed", data: { entity_id, old_state: old, new_state: n } });
+                    return;
+                }
                 calls.push(m);
                 console.log(`CALL ${m.domain}.${m.service} ${JSON.stringify(m.service_data)}`);
                 ok({ context: {} });
@@ -87,7 +109,7 @@ wss.on("connection", ws => {
                     if (m.service === "set_cover_position") n.attributes.current_position = m.service_data.position;
                     if (m.service === "select_option") n.state = m.service_data.option;
                     map.set(id, n);
-                    for (const sub of subs) send({ id: sub, type: "event", event: { event_type: "state_changed", data: { entity_id: id, old_state: e, new_state: n } } });
+                    broadcast({ event_type: "state_changed", data: { entity_id: id, old_state: e, new_state: n } });
                 }
                 return;
             }

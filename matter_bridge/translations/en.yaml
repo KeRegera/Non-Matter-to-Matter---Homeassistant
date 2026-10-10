@@ -29,3 +29,6 @@ configuration:
   exclude_hidden:
     name: Ignore hidden entities
     description: Hidden entities as well as configuration and diagnostic entities are skipped by domain rules.
+  matter_tcp:
+    name: Matter over TCP
+    description: Allows large Matter messages over TCP (e.g. camera snapshots). Only disable if a controller has problems with it.

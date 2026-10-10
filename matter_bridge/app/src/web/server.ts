@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
+import { redactUrl } from "../camera/source.js";
 import type { ConfigStore, EntitySettings } from "../config.js";
 import type { HomeAssistantClient } from "../ha/client.js";
 import { log } from "../log.js";
@@ -81,7 +82,12 @@ export function startWebServer(port: number, bridge: MatterBridge, ha: HomeAssis
                     area,
                     state: entity.state,
                     deviceClass: entity.attributes?.device_class,
-                    settings: { ...settings, code: undefined, hasCode: !!settings.code },
+                    settings: {
+                        ...settings,
+                        code: undefined,
+                        hasCode: !!settings.code,
+                        streamUrl: settings.streamUrl ? redactUrl(settings.streamUrl) : undefined,
+                    },
                     exposed: !!device,
                     wanted: decision.exposed,
                     reason: decision.reason,
@@ -109,6 +115,7 @@ export function startWebServer(port: number, bridge: MatterBridge, ha: HomeAssis
                 if ("type" in body.settings) patch.type = body.settings.type || undefined;
                 if ("name" in body.settings) patch.name = body.settings.name?.slice(0, 32) || undefined;
                 if ("code" in body.settings) patch.code = body.settings.code?.slice(0, 32) || undefined;
+                if ("streamUrl" in body.settings) patch.streamUrl = body.settings.streamUrl?.trim().slice(0, 500) || undefined;
                 store.update(entityId, patch);
             }
             bridge.requestSync();

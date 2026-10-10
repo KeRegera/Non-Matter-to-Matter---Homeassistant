@@ -1,5 +1,7 @@
 import type { Endpoint } from "@matter/main";
 import type { HomeAssistantClient } from "../ha/client.js";
+import type { CameraSource } from "../camera/source.js";
+import type { EntitySettings } from "../config.js";
 import type { HassEntity } from "../ha/types.js";
 
 /**
@@ -15,6 +17,12 @@ export class EntityContext {
     momentary = false;
     /** Code used for alarm panels / locks that require one */
     alarmCode?: string;
+    /** Last seen state of event-like entities, used to detect new events */
+    lastEventState?: string;
+    /** Video source of camera endpoints */
+    camera?: CameraSource;
+    /** Per-entity settings from the web UI */
+    settings: EntitySettings = {};
 
     constructor(
         readonly entityId: string,

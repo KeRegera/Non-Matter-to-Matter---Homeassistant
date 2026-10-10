@@ -2,7 +2,7 @@
 
 Ein Home-Assistant-OS-Add-on, das **beliebige Home-Assistant-Geräte als Matter-Geräte bereitstellt** – inklusive
 der jeweiligen Gerätefunktionen (Helligkeit, Farbe, Farbtemperatur, Position, Neigung, Thermostatmodi,
-Lüfterstufen, Saugroboter-Steuerung, Sensorwerte …). So lassen sich Zigbee-, Z-Wave-, WLAN- oder Cloud-Geräte
+Lüfterstufen, Saugroboter-Steuerung, Sensorwerte, Türklingeln und Kameras mit Live-Bild nach Matter 1.5 …). So lassen sich Zigbee-, Z-Wave-, WLAN- oder Cloud-Geräte
 in Apple Home, Google Home, Amazon Alexa oder SmartThings nutzen.
 
 ## Installation
@@ -28,6 +28,7 @@ matter_bridge/
     src/matter/bridge.ts   Matter-Server (matter.js), Aggregator und Geräteverwaltung
     src/matter/mappers.ts  Zuordnung HA-Entität → Matter-Gerätetyp und -Funktionen
     src/matter/behaviors.ts Matter-Cluster, die Befehle an Home Assistant weiterleiten
+    src/camera/            Matter-Kamera: Stream-Verwaltung, WebRTC (werift) und ffmpeg-Anbindung
     src/web/               Ingress-Web-Oberfläche (Geräteauswahl, QR-Code)
     test/mock-ha.mjs       Simulierter Home-Assistant-Server für lokale Tests
 ```

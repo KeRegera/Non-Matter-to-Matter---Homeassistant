@@ -169,7 +169,10 @@ function render() {
         ${e.area ? `<span class="pill">${esc(e.area)}</span>` : ""}<small>${esc(e.entityId)} · ${esc(e.state)}</small></td>
       <td><input type="text" data-field="name" maxlength="32" placeholder="${esc(e.name)}" value="${esc(e.settings.name || "")}">
         ${["lock", "alarm_control_panel"].includes(e.domain) ? `<input type="password" data-field="code" maxlength="32" autocomplete="new-password" style="margin-top:4px"
-          placeholder="${e.settings.hasCode ? "Code gespeichert (ändern …)" : "Code (optional)"}">` : ""}</td>
+          placeholder="${e.settings.hasCode ? "Code gespeichert (ändern …)" : "Code (optional)"}">` : ""}
+        ${e.domain === "camera" ? `<input type="text" data-field="streamUrl" maxlength="500" style="margin-top:4px"
+          title="RTSP-URL der Kamera, z. B. rtsp://benutzer:passwort@192.168.1.50:554/stream1 – leer lassen, um den Stream von Home Assistant zu verwenden, „-“ zum Entfernen"
+          placeholder="${e.settings.streamUrl ? esc(e.settings.streamUrl) : "RTSP-URL (leer = HA-Stream)"}">` : ""}</td>
       <td><select data-field="type">
         <option value="">Automatisch${autoLabel ? ": " + esc(autoLabel) : ""}</option>
         ${e.types.map(t => `<option value="${esc(t.id)}" ${e.settings.type === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
@@ -198,6 +201,7 @@ $("rows").addEventListener("change", ev => {
   if (field === "type") save([id], { type: ev.target.value || null });
   if (field === "name") save([id], { name: ev.target.value.trim() || null });
   if (field === "code") save([id], { code: ev.target.value || null });
+  if (field === "streamUrl") save([id], { streamUrl: ev.target.value.trim() === "-" ? null : ev.target.value.trim() || undefined });
 });
 ["search", "domain", "filter"].forEach(id => $(id).addEventListener("input", render));
 $("bulk-on").addEventListener("click", () => {

@@ -17,6 +17,7 @@ export interface AddonOptions {
     include_labels: string[];
     exclude_entities: string[];
     exclude_hidden: boolean;
+    matter_tcp: boolean;
 }
 
 /** Per-entity settings managed by the web UI */
@@ -29,6 +30,8 @@ export interface EntitySettings {
     name?: string;
     /** Code for locks / alarm panels that require one */
     code?: string;
+    /** Camera stream URL (RTSP etc.); if empty, the Home Assistant stream of the camera entity is used */
+    streamUrl?: string;
 }
 
 export interface BridgeConfig {
@@ -43,6 +46,7 @@ const defaults: AddonOptions = {
     include_labels: ["matter"],
     exclude_entities: [],
     exclude_hidden: true,
+    matter_tcp: true,
 };
 
 function readJson<T>(file: string): T | undefined {
