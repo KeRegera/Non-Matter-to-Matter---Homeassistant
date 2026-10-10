@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matter Bridge</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #ffffff; --text: #1c1f24; --muted: #6b7280; --border: #e3e5e8;
+  --accent: #03a9f4; --accent-text: #ffffff; --ok: #2e7d32; --warn: #b26a00; --err: #c62828; --chip: #eef2f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --card: #1c1f24; --text: #e7e9ec; --muted: #9aa1ab; --border: #2c3036;
+    --accent: #29b6f6; --accent-text: #0b1014; --ok: #66bb6a; --warn: #ffb74d; --err: #ef5350; --chip: #262a31; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 22px; margin: 4px 0 16px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.grid { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+.qr svg { width: 100%; max-width: 220px; height: auto; background: #fff; border-radius: 8px; }
+.code { font: 600 22px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 1px; }
+.muted { color: var(--muted); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; margin-right: 4px; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+input[type=search], input[type=text], input[type=password], select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; min-width: 0; }
+input[type=search] { flex: 1 1 220px; }
+button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+button.secondary { background: var(--chip); color: var(--text); }
+button.danger { background: var(--err); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
+td.name small { display: block; color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+td select, td input[type=text], td input[type=password] { width: 100%; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.status-dot.on { background: var(--ok); }
+.table-wrap { overflow-x: auto; }
+@media (max-width: 720px) {
+  table, thead, tbody, tr, td { display: block; }
+  thead { display: none; }
+  tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  td { border: 0; padding: 4px 0; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Matter Bridge für Home Assistant</h1>
+
+  <section class="card" id="status-card">
+    <div class="grid">
+      <div class="qr" id="qr"></div>
+      <div>
+        <h2 id="pair-title">Kopplung</h2>
+        <p id="pair-text" class="muted"></p>
+        <div class="code" id="manual-code"></div>
+        <p class="muted" style="margin-top:4px">Manueller Kopplungscode</p>
+        <p id="state-line"></p>
+        <div id="fabrics"></div>
+        <p style="margin-top:12px"><button class="danger" id="reset">Alle Kopplungen entfernen</button></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Geräte</h2>
+    <p class="muted">Wähle aus, welche Home-Assistant-Entitäten als Matter-Geräte bereitgestellt werden.
+      „Auto“ folgt den Regeln aus der Add-on-Konfiguration (Domains und Labels). Der Gerätetyp wird automatisch
+      aus den Fähigkeiten der Entität bestimmt (z.&nbsp;B. Helligkeit, Farbtemperatur, Farbe, Position, Neigung,
+      Lüfterstufen, Thermostatmodi) und kann bei Bedarf überschrieben werden.</p>
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Suchen (Name, Entität, Bereich) …">
+      <select id="domain"><option value="">Alle Domains</option></select>
+      <select id="filter">
+        <option value="all">Alle</option>
+        <option value="exposed">Nur bereitgestellte</option>
+        <option value="hidden">Nur nicht bereitgestellte</option>
+      </select>
+      <button class="secondary" id="bulk-on" title="Alle gefilterten Entitäten bereitstellen">Gefilterte bereitstellen</button>
+      <button class="secondary" id="bulk-off" title="Alle gefilterten Entitäten ausschließen">Gefilterte ausschließen</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:110px">Bereitstellen</th><th>Entität</th><th style="width:200px">Name in Matter</th><th style="width:300px">Matter-Gerätetyp</th><th style="width:180px">Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="count"></p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let entities = [];
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return res.json();
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+async function loadStatus() {
+  try {
+    const s = await api("api/status");
+    $("qr").innerHTML = s.qrSvg || "";
+    $("manual-code").textContent = s.manualPairingCode || "–";
+    $("pair-title").textContent = s.commissioned ? "Gekoppelt" : "Bereit zur Kopplung";
+    $("pair-text").textContent = s.commissioned
+      ? "Die Bridge ist mit mindestens einem Matter-Controller verbunden. Weitere Controller (z. B. Google Home zusätzlich zu Apple Home) lassen sich über die Freigabefunktion des ersten Controllers hinzufügen."
+      : "Scanne den QR-Code mit Apple Home, Google Home, Amazon Alexa, SmartThings oder einem anderen Matter-Controller.";
+    $("state-line").innerHTML =
+      `<span class="pill ${s.haConnected ? "ok" : "err"}">Home Assistant ${s.haConnected ? "verbunden" : "getrennt"}</span>` +
+      `<span class="pill ${s.running ? "ok" : "warn"}">Matter ${s.running ? "online" : "startet …"}</span>` +
+      `<span class="pill">${s.deviceCount} Geräte</span><span class="pill">UDP-Port ${s.port}</span>`;
+    $("fabrics").innerHTML = s.fabrics.length
+      ? "<p class='muted'>Verbundene Controller:</p>" + s.fabrics.map(f =>
+          `<span class="pill">#${f.index} ${esc(f.label || "Controller")} (Vendor 0x${f.vendorId.toString(16)})</span>`).join("")
+      : "";
+    $("reset").disabled = !s.commissioned;
+  } catch (e) {
+    $("state-line").innerHTML = `<span class="err">Status konnte nicht geladen werden: ${esc(e.message)}</span>`;
+  }
+}
+
+async function loadEntities() {
+  entities = await api("api/entities");
+  const domains = [...new Set(entities.map(e => e.domain))].sort();
+  const sel = $("domain"), current = sel.value;
+  sel.innerHTML = `<option value="">Alle Domains</option>` + domains.map(d => `<option ${d === current ? "selected" : ""}>${esc(d)}</option>`).join("");
+  render();
+}
+
+function filtered() {
+  const q = $("search").value.trim().toLowerCase();
+  const domain = $("domain").value;
+  const filter = $("filter").value;
+  return entities.filter(e =>
+    (!domain || e.domain === domain) &&
+    (filter === "all" || (filter === "exposed" ? e.exposed : !e.exposed)) &&
+    (!q || [e.entityId, e.name, e.area, e.settings.name].some(v => v && v.toLowerCase().includes(q))));
+}
+
+function render() {
+  const list = filtered();
+  $("count").textContent = `${list.length} von ${entities.length} Entitäten · ${entities.filter(e => e.exposed).length} bereitgestellt`;
+  $("rows").innerHTML = list.slice(0, 500).map(e => {
+    const enabled = e.settings.enabled === true ? "on" : e.settings.enabled === false ? "off" : "auto";
+    const autoLabel = (e.types.find(t => t.id === e.autoType) || {}).label;
+    const status = e.error ? `<span class="err" title="${esc(e.error)}">Fehler: ${esc(e.error).slice(0, 60)}</span>`
+      : e.exposed ? `<span class="ok">Aktiv${e.endpoint !== undefined ? " · Endpoint " + e.endpoint : ""}</span>`
+      : `<span class="muted">${esc(e.reason)}</span>`;
+    return `<tr data-id="${esc(e.entityId)}">
+      <td><select data-field="enabled">
+        <option value="auto" ${enabled === "auto" ? "selected" : ""}>Auto${e.wanted && enabled === "auto" ? " (an)" : ""}</option>
+        <option value="on" ${enabled === "on" ? "selected" : ""}>An</option>
+        <option value="off" ${enabled === "off" ? "selected" : ""}>Aus</option></select></td>
+      <td class="name"><span class="status-dot ${e.exposed ? "on" : ""}"></span>${esc(e.name)}
+        ${e.area ? `<span class="pill">${esc(e.area)}</span>` : ""}<small>${esc(e.entityId)} · ${esc(e.state)}</small></td>
+      <td><input type="text" data-field="name" maxlength="32" placeholder="${esc(e.name)}" value="${esc(e.settings.name || "")}">
+        ${["lock", "alarm_control_panel"].includes(e.domain) ? `<input type="password" data-field="code" maxlength="32" autocomplete="new-password" style="margin-top:4px"
+          placeholder="${e.settings.hasCode ? "Code gespeichert (ändern …)" : "Code (optional)"}">` : ""}</td>
+      <td><select data-field="type">
+        <option value="">Automatisch${autoLabel ? ": " + esc(autoLabel) : ""}</option>
+        ${e.types.map(t => `<option value="${esc(t.id)}" ${e.settings.type === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
+      </select></td>
+      <td>${status}</td></tr>`;
+  }).join("") + (list.length > 500 ? `<tr><td colspan="5" class="muted">Nur die ersten 500 Treffer werden angezeigt – bitte Suche verfeinern.</td></tr>` : "");
+}
+
+async function save(entityIds, settings) {
+  document.body.style.cursor = "progress";
+  try {
+    await api("api/entities", { entityIds, settings });
+    await loadEntities();
+    await loadStatus();
+  } catch (e) {
+    alert("Speichern fehlgeschlagen: " + e.message);
+  } finally {
+    document.body.style.cursor = "";
+  }
+}
+
+$("rows").addEventListener("change", ev => {
+  const field = ev.target.dataset.field;
+  const id = ev.target.closest("tr").dataset.id;
+  if (field === "enabled") save([id], { enabled: ev.target.value === "auto" ? null : ev.target.value === "on" });
+  if (field === "type") save([id], { type: ev.target.value || null });
+  if (field === "name") save([id], { name: ev.target.value.trim() || null });
+  if (field === "code") save([id], { code: ev.target.value || null });
+});
+["search", "domain", "filter"].forEach(id => $(id).addEventListener("input", render));
+$("bulk-on").addEventListener("click", () => {
+  const ids = filtered().map(e => e.entityId);
+  if (ids.length && confirm(`${ids.length} Entitäten bereitstellen?`)) save(ids, { enabled: true });
+});
+$("bulk-off").addEventListener("click", () => {
+  const ids = filtered().map(e => e.entityId);
+  if (ids.length && confirm(`${ids.length} Entitäten ausschließen?`)) save(ids, { enabled: false });
+});
+$("reset").addEventListener("click", async () => {
+  if (!confirm("Wirklich alle Matter-Kopplungen entfernen? Die Bridge muss danach in allen Controllern neu hinzugefügt werden.")) return;
+  try { await api("api/factory-reset", {}); } catch (e) { alert(e.message); }
+  setTimeout(loadStatus, 1500);
+});
+
+loadStatus();
+loadEntities();
+setInterval(loadStatus, 10000);
+</script>
+</body>
+</html>

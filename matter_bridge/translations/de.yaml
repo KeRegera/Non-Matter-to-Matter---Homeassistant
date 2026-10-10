@@ -1,0 +1,31 @@
+configuration:
+  log_level:
+    name: Log-Level
+    description: Ausführlichkeit der Protokollierung.
+  bridge_name:
+    name: Name der Bridge
+    description: Name, unter dem die Bridge in Apple Home, Google Home, Alexa usw. erscheint (max. 32 Zeichen).
+  port:
+    name: Matter-Port
+    description: UDP-Port für Matter. Nur ändern, wenn 5540 bereits belegt ist.
+  passcode:
+    name: Pairing-Passcode
+    description: Optionaler fester Setup-Code. Leer lassen, um einen sicheren Code automatisch zu erzeugen.
+  discriminator:
+    name: Discriminator
+    description: Optionaler Discriminator (0–4095). Leer lassen für automatische Auswahl.
+  network_interface:
+    name: Netzwerkschnittstelle
+    description: Optional, z. B. "eth0" oder "end0". Beschränkt die mDNS-Ankündigung auf diese Schnittstelle.
+  include_domains:
+    name: Domains automatisch bereitstellen
+    description: Alle Entitäten dieser Domains werden automatisch bereitgestellt (z. B. light, switch, cover, climate). Einzelne Entitäten lassen sich in der Web-Oberfläche ein- oder ausschließen.
+  include_labels:
+    name: Labels automatisch bereitstellen
+    description: Entitäten oder Geräte mit einem dieser Labels werden automatisch bereitgestellt.
+  exclude_entities:
+    name: Entitäten ausschließen
+    description: Diese Entitäten werden nie automatisch bereitgestellt.
+  exclude_hidden:
+    name: Versteckte Entitäten ignorieren
+    description: Versteckte Entitäten sowie Konfigurations- und Diagnose-Entitäten werden bei Domain-Regeln übersprungen.

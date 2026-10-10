@@ -1,0 +1,31 @@
+configuration:
+  log_level:
+    name: Log level
+    description: Verbosity of the add-on log.
+  bridge_name:
+    name: Bridge name
+    description: Name shown in Apple Home, Google Home, Alexa etc. (max. 32 characters).
+  port:
+    name: Matter port
+    description: UDP port used for Matter. Only change it if 5540 is already in use.
+  passcode:
+    name: Pairing passcode
+    description: Optional fixed setup code. Leave empty to generate a secure one automatically.
+  discriminator:
+    name: Discriminator
+    description: Optional discriminator (0-4095). Leave empty for automatic selection.
+  network_interface:
+    name: Network interface
+    description: Optional, e.g. "eth0" or "end0". Limits mDNS announcements to this interface.
+  include_domains:
+    name: Auto-expose domains
+    description: All entities of these domains are exposed automatically (e.g. light, switch, cover, climate). Single entities can be included or excluded in the web UI.
+  include_labels:
+    name: Auto-expose labels
+    description: Entities or devices carrying one of these labels are exposed automatically.
+  exclude_entities:
+    name: Exclude entities
+    description: These entities are never exposed automatically.
+  exclude_hidden:
+    name: Ignore hidden entities
+    description: Hidden entities as well as configuration and diagnostic entities are skipped by domain rules.
