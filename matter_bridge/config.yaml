@@ -1,5 +1,5 @@
 name: Matter Bridge
-version: "1.1.1"
+version: "1.1.2"
 slug: matter_bridge
 description: Stellt beliebige Home-Assistant-Geräte (auch Nicht-Matter-Geräte) als Matter-Geräte bereit
 url: https://github.com/KeRegera/Non-Matter-to-Matter---Homeassistant
@@ -13,7 +13,7 @@ boot: auto
 host_network: true
 homeassistant_api: true
 ingress: true
-ingress_port: 8099
+ingress_port: 0
 panel_icon: mdi:access-point-network
 panel_title: Matter Bridge
 options:

@@ -133,6 +133,14 @@ export function startWebServer(port: number, bridge: MatterBridge, ha: HomeAssis
         json(res, 404, { error: "Not found" });
     }
 
+    // A problem with the web UI must never stop the Matter bridge itself
+    server.on("error", (e: NodeJS.ErrnoException) => {
+        log.error(
+            e.code === "EADDRINUSE"
+                ? `Web UI port ${port} is already in use by another add-on - the web UI is unavailable, the Matter bridge keeps running`
+                : `Web UI error: ${e.message}`,
+        );
+    });
     server.listen(port, () => log.info(`Web UI listening on port ${port}`));
     return server;
 }

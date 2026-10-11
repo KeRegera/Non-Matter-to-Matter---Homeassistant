@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+
+- Behoben: Absturz, wenn Port 8099 bereits von einem anderen Add-on belegt ist. Home Assistant weist der
+  Web-Oberfläche (Ingress) jetzt automatisch einen freien Port zu.
+- Ein Fehler der Web-Oberfläche beendet die Matter-Bridge nicht mehr.
+
 ## 1.1.1
 
 - Behoben: Start schlug fehl, wenn Port 5540 bereits belegt ist (z. B. durch das Matter-Server-Add-on).
