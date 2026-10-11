@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Behoben: Start schlug fehl, wenn Port 5540 bereits belegt ist (z. B. durch das Matter-Server-Add-on).
+  Die Bridge weicht jetzt automatisch auf den nächsten freien Port aus (5541, 5542, …) und meldet das im Log.
+
 ## 1.1.0
 
 - Neu: Kameras als Matter-1.5-Kamera mit Live-Video (H.264) und Ton (Opus) über WebRTC sowie Schnappschüssen

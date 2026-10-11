@@ -56,7 +56,7 @@ export function startWebServer(port: number, bridge: MatterBridge, ha: HomeAssis
                 qrPairingCode: qr,
                 qrSvg: qr ? await QRCode.toString(qr, { type: "svg", margin: 1, width: 220 }) : undefined,
                 deviceCount: bridge.devices.size,
-                port: bridge.options.port,
+                port: bridge.port,
             });
             return;
         }

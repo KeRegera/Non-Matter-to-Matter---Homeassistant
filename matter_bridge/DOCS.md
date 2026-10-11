@@ -113,7 +113,9 @@ Schnappschüsse wird Matter über TCP benötigt (Option `matter_tcp`, standardm�
 
 - **IPv6** muss im Heimnetz aktiv sein (Matter nutzt IPv6 und mDNS). Das Add-on läuft im Host-Netzwerk.
 - Der Matter-Controller (Apple TV/HomePod, Google Nest, Echo usw.) muss sich im selben Netzwerk befinden.
-- Läuft bereits eine andere Matter-Bridge auf Port 5540, unter `port` einen anderen Port (z. B. `5541`) wählen.
+- Ist Port 5540 bereits belegt (z. B. durch das offizielle *Matter Server*-Add-on), weicht die Bridge automatisch
+  auf den nächsten freien Port aus. Der tatsächlich genutzte Port steht in der Web-Oberfläche; fest einstellen
+  lässt er sich unter `port`.
 - Nicht jeder Controller unterstützt jeden Gerätetyp: Apple Home zeigt z. B. keine Lautsprecher und Moduswahlen
   an, Google Home und SmartThings dagegen schon.
 - Das stufenlose „Dimmen halten“ (Matter *Move/Stop*) wird als Übergang zum Minimum bzw. Maximum umgesetzt, da

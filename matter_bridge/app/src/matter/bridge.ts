@@ -11,6 +11,7 @@ import { closeCameraSessions } from "../camera/behaviors.js";
 import { EntityContext, registerContext, unregisterContext } from "./context.js";
 import { truncate } from "./convert.js";
 import { type DeviceMapper, selectMapper } from "./mappers.js";
+import { findFreePort } from "./port.js";
 
 interface BridgedDevice {
     entityId: string;
@@ -38,6 +39,8 @@ export class MatterBridge {
     server?: ServerNode;
     aggregator?: Endpoint;
     readonly devices = new Map<string, BridgedDevice>();
+    /** The port actually used (may differ from the configured one if that is occupied) */
+    port = 0;
     #queue: Promise<void> = Promise.resolve();
     #lastErrors = new Map<string, string>();
 
@@ -55,9 +58,16 @@ export class MatterBridge {
         if (this.options.network_interface) env.vars.set("mdns.networkInterface", this.options.network_interface);
 
         const name = truncate(this.options.bridge_name || "HA Matter Bridge", 32);
+        this.port = await findFreePort(this.options.port, this.options.matter_tcp);
+        if (this.port !== this.options.port) {
+            log.warn(
+                `Port ${this.options.port} is already in use (e.g. by the Matter Server add-on) - using port ${this.port} instead. ` +
+                    "Set a free port in the add-on options to silence this warning.",
+            );
+        }
         this.server = await ServerNode.create({
             id: "ha-matter-bridge",
-            network: { port: this.options.port, tcp: this.options.matter_tcp },
+            network: { port: this.port, tcp: this.options.matter_tcp },
             commissioning: {
                 passcode: this.credentials.passcode,
                 discriminator: this.credentials.discriminator,
