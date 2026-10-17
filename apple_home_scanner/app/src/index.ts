@@ -43,7 +43,7 @@ ha.start();
 
 startWebServer(Number(process.env.INGRESS_PORT ?? 8099), {
     ha,
-    homekit: new HomeKitPairing(ha),
+    homekit: new HomeKitPairing(ha, options.discovery_seconds),
     matter: new MatterCommissioning(ha),
     discoverySeconds: options.discovery_seconds,
 });

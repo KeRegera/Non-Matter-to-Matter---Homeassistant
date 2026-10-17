@@ -115,7 +115,10 @@ function brief(result: unknown) {
 }
 
 export class HomeKitPairing {
-    constructor(private readonly ha: HomeAssistantClient) {}
+    constructor(
+        private readonly ha: HomeAssistantClient,
+        private readonly discoverySeconds = 5,
+    ) {}
 
     async pair(request: PairRequest): Promise<PairResult> {
         const code = formatSetupCode(request.setupCode);
@@ -133,6 +136,94 @@ export class HomeKitPairing {
         }
 
         // 3. Start the regular "add integration" flow
+        const started = await this.#startUserFlow();
+        if ("status" in started) return started;
+        const { flowId, options } = started;
+        const wanted = request.deviceName ? options.find(o => o.value === request.deviceName) : undefined;
+        if (wanted) return this.#selectDevice(flowId, wanted.value, code, true);
+
+        return {
+            status: "choose",
+            flowId,
+            options,
+            message: request.deviceName
+                ? `Home Assistant hat "${request.deviceName}" nicht in der Liste. Bitte das Gerät auswählen:`
+                : "Welches Gerät gehört zu diesem Code?",
+        };
+    }
+
+    /**
+     * Adds an accessory using nothing but its HomeKit setup code.
+     * With a QR code (setup ID) the accessory is identified on the network by its setup hash.
+     * With only the 8-digit code every pairable accessory is tried in turn: the code is unique per device,
+     * so all other accessories simply reject it and stay untouched.
+     */
+    async autoPair(setupCode: string, setupId?: string): Promise<PairResult> {
+        const code = formatSetupCode(setupCode);
+        const network = await discoverHapDevices(this.discoverySeconds, setupId);
+        const match = network.find(d => d.matches);
+
+        if (match) {
+            log.info(`Setup ID ${setupId} belongs to "${match.name}"`);
+            if (match.pairable === false)
+                return {
+                    status: "error",
+                    reason: "already_paired",
+                    message: `„${match.name}“ ist noch mit einem anderen Controller gekoppelt (meist Apple Home). Entferne es zuerst aus der Home-App bzw. setze es zurück und versuche es dann erneut.`,
+                };
+            const result = await this.pair({ setupCode: code, deviceName: match.name, deviceId: match.id });
+            if (result.status !== "choose") return result;
+            await this.cancel(result.flowId);
+        }
+
+        const started = await this.#startUserFlow();
+        if ("status" in started) {
+            const paired = network.filter(d => d.pairable === false).map(d => d.name);
+            if (started.reason === "no_devices" && paired.length)
+                started.message += ` Bereits gekoppelt (z. B. mit Apple Home): ${paired.slice(0, 8).join(", ")}.`;
+            return started;
+        }
+
+        // Most likely candidates first: matching network device, then devices we also see on the network
+        const seen = new Set(network.filter(d => d.pairable !== false).map(d => d.name));
+        const names = started.options
+            .map(o => o.value)
+            .sort((a, b) => Number(b === match?.name) - Number(a === match?.name) || Number(seen.has(b)) - Number(seen.has(a)))
+            .slice(0, 12);
+        log.info(`Trying the setup code on ${names.length} pairable HomeKit device(s): ${names.join(", ")}`);
+
+        let flowId: string | undefined = started.flowId;
+        const failures: { name: string; result: Extract<PairResult, { status: "error" }> }[] = [];
+        for (const name of names) {
+            if (!flowId) {
+                const next = await this.#startUserFlow();
+                if ("status" in next) break;
+                flowId = next.flowId;
+            }
+            const result = await this.#selectDevice(flowId, name, code, true);
+            flowId = undefined;
+            if (result.status === "paired") return result;
+            if (result.status === "error") {
+                log.info(`"${name}": ${result.reason ?? result.message}`);
+                failures.push({ name, result });
+            }
+        }
+        if (flowId) await this.cancel(flowId);
+
+        const other = failures.find(f => f.result.reason !== "authentication_error");
+        if (!failures.length)
+            return { status: "error", message: "Home Assistant hat kein koppelbares HomeKit-Gerät gefunden." };
+        if (!other)
+            return {
+                status: "error",
+                reason: "authentication_error",
+                message: `Keines der ${failures.length} koppelbaren HomeKit-Geräte (${failures.map(f => f.name).join(", ")}) hat diesen Code akzeptiert. Bitte den Code prüfen und sicherstellen, dass das Gerät aus Apple Home entfernt und eingeschaltet ist.`,
+            };
+        return { ...other.result, message: `${other.name}: ${other.result.message}` };
+    }
+
+    /** Starts the "add HomeKit device" flow and returns the pairable accessories Home Assistant offers */
+    async #startUserFlow(): Promise<{ flowId: string; options: Option[] } | Extract<PairResult, { status: "error" }>> {
         const start = await this.ha.rest<FlowResult>("POST", "config/config_entries/flow", {
             handler: HANDLER,
             show_advanced_options: false,
@@ -140,9 +231,10 @@ export class HomeKitPairing {
         log.debug(`HomeKit flow started: ${brief(start)}`);
         if (start.type === "abort")
             return { status: "error", reason: start.reason, message: errorMessage(start.reason), details: brief(start) };
-        if (start.type !== "form" || start.step_id !== "user")
-            return this.#unexpected(start, true);
-
+        if (start.type !== "form" || start.step_id !== "user") {
+            const result = await this.#unexpected(start, true);
+            return result as Extract<PairResult, { status: "error" }>;
+        }
         let options = selectOptions(start.data_schema, "device");
         if (!options.length) {
             // Unknown schema format: fall back to the pairable accessories we see on the network ourselves.
@@ -156,22 +248,13 @@ export class HomeKitPairing {
             await this.cancel(start.flow_id);
             return {
                 status: "error",
+                reason: "no_devices",
                 message:
                     "Home Assistant hat kein koppelbares HomeKit-Gerät gefunden. Ist das Gerät eingeschaltet, im selben Netzwerk und aus Apple Home entfernt (bzw. zurückgesetzt)?",
                 details: brief(start),
             };
         }
-        const wanted = request.deviceName ? options.find(o => o.value === request.deviceName) : undefined;
-        if (wanted) return this.#selectDevice(start.flow_id, wanted.value, code, true);
-
-        return {
-            status: "choose",
-            flowId: start.flow_id,
-            options,
-            message: request.deviceName
-                ? `Home Assistant hat "${request.deviceName}" nicht in der Liste. Bitte das Gerät auswählen:`
-                : "Welches Gerät gehört zu diesem Code?",
-        };
+        return { flowId: start.flow_id, options };
     }
 
     /** Cancels a pairing flow the user abandoned in the device selection */

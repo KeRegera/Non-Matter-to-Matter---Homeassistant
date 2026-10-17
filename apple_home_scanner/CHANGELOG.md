@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Neu: HomeKit-Geräte in einem Schritt hinzufügen – Code eingeben (oder QR-Code scannen), **Hinzufügen** tippen,
+  fertig. Keine Geräteauswahl mehr nötig:
+  - mit QR-Code wird das Gerät über seine Setup-ID eindeutig im Netzwerk erkannt
+  - mit dem 8-stelligen Code probiert die App den Code an allen koppelbaren HomeKit-Geräten durch; nur das
+    richtige Gerät akzeptiert ihn, alle anderen bleiben unverändert
+- Klare Meldung, wenn das Gerät noch mit Apple Home gekoppelt ist
+
 ## 1.0.1
 
 - Behoben: HomeKit-Kopplung schlug fehl, wenn Home Assistant das Gerät bereits selbst entdeckt hatte – der

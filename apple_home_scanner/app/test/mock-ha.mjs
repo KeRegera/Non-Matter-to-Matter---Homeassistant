@@ -32,7 +32,8 @@ function flowStep(id, body) {
     const code = String(body.pairing_code ?? "");
     if (code === "123-45-678" && !body.allow_insecure_setup_codes)
       return [200, form(id, "pair", { errors: { pairing_code: "insecure_setup_code" } })];
-    if (["841-31-633", "123-45-678", "031-45-154"].includes(code)) {
+    const CODES = { "Eve Energy 1A2B": ["841-31-633", "123-45-678"], "Hue Bridge": ["031-45-154"], "Nanoleaf Strip": ["031-45-154", "555-44-333"] };
+    if ((CODES[flow.device] ?? []).includes(code)) {
       flows.delete(id);
       return [200, { type: "create_entry", flow_id: id, title: flow.device }];
     }

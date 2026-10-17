@@ -107,6 +107,22 @@ export function startWebServer(port: number, deps: ServerDeps) {
             return;
         }
 
+        if (req.method === "POST" && path === "/api/homekit/add") {
+            const body = (await readBody(req)) as { code?: string };
+            // Accepts the 8-digit code as well as the X-HM:// QR content
+            let result;
+            try {
+                const decoded = decode(String(body.code ?? ""));
+                if (decoded.kind !== "homekit") return json(res, 400, { error: "Kein HomeKit-Code" });
+                result = await deps.homekit.autoPair(decoded.homekit.setupCode, decoded.homekit.setupId);
+            } catch (e) {
+                result = { status: "error" as const, message: e instanceof Error ? e.message : String(e) };
+            }
+            if (result.status === "error") log.warn(`HomeKit pairing failed: ${result.message}`, result.details ?? "");
+            json(res, 200, result);
+            return;
+        }
+
         if (req.method === "POST" && path === "/api/homekit/cancel") {
             const body = (await readBody(req)) as { flowId?: string };
             if (typeof body.flowId === "string") await deps.homekit.cancel(body.flowId);

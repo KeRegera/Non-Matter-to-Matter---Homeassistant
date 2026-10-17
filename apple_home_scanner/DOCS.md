@@ -26,16 +26,17 @@ den manuellen Matter-Code um und fügt das Gerät mit einem Klick zu Home Assist
 
 ## HomeKit-Gerät hinzufügen
 
-Reine HomeKit-Geräte werden über die Integration **HomeKit Device** (HomeKit Controller) eingebunden.
-
 1. Gerät **aus Apple Home entfernen** (Gerät → Einstellungen → *Gerät entfernen*) oder zurücksetzen.
    Ein HomeKit-Gerät kann immer nur mit *einem* System gekoppelt sein.
-2. QR-Code scannen → **Gerät im Netzwerk suchen**. Die App vergleicht den Setup-Hash, den das Gerät im Netzwerk
-   ankündigt, mit der Setup-ID aus dem QR-Code und markiert das passende Gerät.
-3. **Ausgewähltes Gerät koppeln** – der Setup-Code wird automatisch an Home Assistant übergeben.
+2. HomeKit-Code eingeben (z. B. `123-45-678`) oder den QR-Code scannen.
+3. **Hinzufügen** tippen – fertig.
 
-Bluetooth-Geräte sind in der Netzwerksuche nicht sichtbar. Dafür **Direkt koppeln** wählen: Home Assistant listet
-dann alle Geräte, die es selbst gefunden hat (auch per Bluetooth), und du wählst das richtige aus.
+Die App findet das passende Gerät selbst:
+
+- **QR-Code:** Er enthält eine Setup-ID. Die App vergleicht sie mit dem Setup-Hash, den jedes ungekoppelte Gerät im
+  Netzwerk ankündigt, und koppelt genau dieses Gerät.
+- **Nur 8-stelliger Code:** Die App probiert den Code an allen koppelbaren HomeKit-Geräten, die Home Assistant findet
+  (auch Bluetooth-Geräte). Nur das richtige Gerät akzeptiert ihn, alle anderen lehnen ihn ab und bleiben unverändert.
 
 ## Matter-Gerät hinzufügen
 
