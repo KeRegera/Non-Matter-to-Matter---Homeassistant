@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apple Home Scanner</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #ffffff; --text: #1c1f24; --muted: #6b7280; --border: #e3e5e8;
+  --accent: #03a9f4; --accent-text: #ffffff; --ok: #2e7d32; --warn: #b26a00; --err: #c62828; --chip: #eef2f6;
+  --ok-bg: #e8f5e9; --warn-bg: #fff4e0; --err-bg: #fdecea; --info-bg: #e6f5fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --card: #1c1f24; --text: #e7e9ec; --muted: #9aa1ab; --border: #2c3036;
+    --accent: #29b6f6; --accent-text: #0b1014; --ok: #66bb6a; --warn: #ffb74d; --err: #ef5350; --chip: #262a31;
+    --ok-bg: #1b2a1d; --warn-bg: #2d2416; --err-bg: #2e1a1a; --info-bg: #14262f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 22px; margin: 4px 0 4px; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+h3 { font-size: 14px; margin: 16px 0 8px; }
+.sub { margin: 0 0 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; margin: 0 4px 4px 0; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; min-width: 0; flex: 1 1 260px; }
+button, .button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+button.secondary, .button.secondary { background: var(--chip); color: var(--text); }
+button:disabled { opacity: .5; cursor: default; }
+.scanner { position: relative; margin-top: 12px; border-radius: 12px; overflow: hidden; background: #000; max-width: 480px; display: none; }
+.scanner video { width: 100%; display: block; }
+.scanner .frame { position: absolute; inset: 15%; border: 3px solid rgba(255,255,255,.85); border-radius: 16px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); }
+.notice { border-radius: 10px; padding: 10px 12px; margin: 12px 0 0; }
+.notice.ok { background: var(--ok-bg); color: var(--text); border-left: 4px solid var(--ok); }
+.notice.warn { background: var(--warn-bg); color: var(--text); border-left: 4px solid var(--warn); }
+.notice.err { background: var(--err-bg); color: var(--text); border-left: 4px solid var(--err); }
+.notice.info { background: var(--info-bg); color: var(--text); border-left: 4px solid var(--accent); }
+.result-grid { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 640px) { .result-grid { grid-template-columns: 1fr; } }
+.qr svg { width: 100%; max-width: 200px; height: auto; background: #fff; border-radius: 8px; }
+.code { font: 600 24px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 1px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 12px 0 0; }
+dt { color: var(--muted); }
+dd { margin: 0; word-break: break-all; }
+.mono { font-family: ui-monospace, Menlo, monospace; }
+.devices label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; cursor: pointer; }
+.devices label.match { border-color: var(--ok); }
+.devices input { margin-top: 3px; }
+.spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+ol { padding-left: 20px; margin: 8px 0; }
+li { margin-bottom: 4px; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.status-dot.on { background: var(--ok); } .status-dot.off { background: var(--err); }
+.hidden { display: none !important; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; cursor: pointer; }
+.check input { margin-top: 3px; flex: none; }
+.qr:empty { display: none; }
+.result-grid.noqr { grid-template-columns: 1fr; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Apple Home Scanner</h1>
+  <p class="sub muted" id="status-line"><span class="status-dot"></span>Verbinde …</p>
+
+  <section class="card">
+    <h2>Code scannen</h2>
+    <p class="muted">HomeKit-QR-Code (Etikett auf dem Gerät oder der Verpackung), Matter-QR-Code oder einen Code aus
+      Apple Home scannen – oder den Code einfach eintippen.</p>
+    <div class="row">
+      <button id="camera-btn">📷 Kamera starten</button>
+      <label class="button secondary" for="photo">🖼️ Foto aufnehmen / wählen</label>
+      <input type="file" id="photo" accept="image/*" capture="environment" class="hidden">
+      <button class="secondary hidden" id="camera-stop">Kamera stoppen</button>
+    </div>
+    <div class="scanner" id="scanner"><video id="video" playsinline muted></video><div class="frame"></div></div>
+    <div id="camera-msg"></div>
+    <h3>Code eingeben</h3>
+    <form class="row" id="manual-form">
+      <input type="text" id="manual" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        placeholder="X-HM://…, MT:…, 123-45-678 oder 1234-567-8901">
+      <button type="submit">Auswerten</button>
+    </form>
+    <div id="decode-msg"></div>
+  </section>
+
+  <section class="card hidden" id="result-card">
+    <div class="result-grid">
+      <div class="qr" id="result-qr"></div>
+      <div>
+        <h2 id="result-title"></h2>
+        <div class="code" id="result-code"></div>
+        <p class="muted" id="result-code-label" style="margin:2px 0 0"></p>
+        <div id="result-tags" style="margin-top:8px"></div>
+        <dl id="result-details"></dl>
+      </div>
+    </div>
+    <div id="result-convert"></div>
+    <div id="result-actions" style="margin-top:16px"></div>
+    <div id="action-msg"></div>
+  </section>
+
+  <section class="card">
+    <h2>Matter-Code aus Apple Home holen</h2>
+    <p class="muted">Matter-Geräte, die schon in Apple Home sind, können zusätzlich in Home Assistant eingebunden
+      werden (Multi-Admin) – sie bleiben in Apple Home erhalten.</p>
+    <ol>
+      <li>Home-App öffnen, das Gerät lange drücken und unten auf <b>Einstellungen</b> (Zahnrad) tippen.</li>
+      <li>Ganz nach unten scrollen und <b>Kopplungsmodus aktivieren</b> wählen.</li>
+      <li>Den angezeigten <b>Setup-Code</b> (11 Ziffern) kopieren und oben eingeben.</li>
+      <li>Innerhalb von 15 Minuten auf <b>Zu Home Assistant hinzufügen</b> tippen.</li>
+    </ol>
+    <p class="muted">Reine HomeKit-Geräte (Code <span class="mono">X-HM://…</span> bzw. 8 Ziffern) sprechen kein Matter.
+      Sie lassen sich nur exklusiv koppeln: entweder mit Apple Home oder mit Home Assistant. Danach kann die
+      <b>Matter Bridge</b> aus diesem Repository sie wieder als Matter-Gerät an Apple Home zurückgeben.</p>
+  </section>
+</main>
+
+<script src="jsQR.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const notice = (el, kind, html) => { $(el).innerHTML = html ? `<div class="notice ${kind}">${html}</div>` : ""; };
+const busy = text => `<span class="spinner"></span> ${esc(text)}`;
+
+let current = null;      // last decoded result
+let haStatus = null;
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Fehler ${res.status}`);
+  return data;
+}
+
+// ---------- Status ----------
+async function loadStatus() {
+  try {
+    haStatus = await api("api/status");
+    const matter = { loaded: "Matter-Integration aktiv", not_loaded: "Matter-Integration nicht geladen",
+      missing: "Matter-Integration nicht eingerichtet", unknown: "Matter-Status unbekannt" }[haStatus.matter];
+    $("status-line").innerHTML = haStatus.haConnected
+      ? `<span class="status-dot on"></span>Verbunden mit Home Assistant ${esc(haStatus.haVersion || "")} · ${esc(matter)}`
+      : `<span class="status-dot off"></span>Keine Verbindung zu Home Assistant`;
+  } catch {
+    $("status-line").innerHTML = `<span class="status-dot off"></span>App nicht erreichbar`;
+  }
+}
+loadStatus();
+setInterval(loadStatus, 15000);
+
+// ---------- QR decoding in the browser ----------
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+function scanImage(source, width, height, maxSize, inversion) {
+  const scale = Math.min(1, maxSize / Math.max(width, height));
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const code = jsQR(image.data, image.width, image.height, { inversionAttempts: inversion });
+  return code && code.data ? code.data : null;
+}
+
+// Camera (needs a secure context: HTTPS or the Home Assistant app)
+let stream = null;
+let scanTimer = null;
+
+$("camera-btn").onclick = async () => {
+  notice("camera-msg");
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const inFrame = window.top !== window.self;
+    notice("camera-msg", "warn",
+      `Der Browser erlaubt hier keinen Kamerazugriff (nur über HTTPS möglich).
+       Nutze <b>Foto aufnehmen / wählen</b> – das funktioniert auch ohne HTTPS.` +
+      (inFrame ? ` <br><a href="#" id="newtab">Scanner in neuem Tab öffnen</a>` : ""));
+    const link = $("newtab");
+    if (link) link.onclick = e => { e.preventDefault(); window.open(location.href, "_blank"); };
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+  } catch (e) {
+    notice("camera-msg", "warn",
+      `Kamera nicht verfügbar (${esc(e.message || e.name)}). Ggf. Kamerazugriff erlauben oder
+       <b>Foto aufnehmen / wählen</b> verwenden. <a href="#" id="newtab">Scanner in neuem Tab öffnen</a>`);
+    const link = $("newtab");
+    if (link) link.onclick = ev => { ev.preventDefault(); window.open(location.href, "_blank"); };
+    return;
+  }
+  const video = $("video");
+  video.srcObject = stream;
+  await video.play().catch(() => {});
+  $("scanner").style.display = "block";
+  $("camera-btn").classList.add("hidden");
+  $("camera-stop").classList.remove("hidden");
+  scanTimer = setInterval(() => {
+    if (video.readyState < 2) return;
+    const text = scanImage(video, video.videoWidth, video.videoHeight, 720, "dontInvert");
+    if (text) { stopCamera(); handleText(text); }
+  }, 200);
+};
+
+function stopCamera() {
+  clearInterval(scanTimer);
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  $("scanner").style.display = "none";
+  $("camera-btn").classList.remove("hidden");
+  $("camera-stop").classList.add("hidden");
+}
+$("camera-stop").onclick = stopCamera;
+
+// Photo (works everywhere, also on iOS without HTTPS)
+$("photo").onchange = async () => {
+  const file = $("photo").files[0];
+  $("photo").value = "";
+  if (!file) return;
+  notice("camera-msg", "info", busy("Foto wird ausgewertet …"));
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error("Bild konnte nicht geladen werden")); img.src = url; });
+    let text = null;
+    for (const size of [1000, 1600, 600, 2400]) {
+      text = scanImage(img, img.naturalWidth, img.naturalHeight, size, "attemptBoth");
+      if (text) break;
+    }
+    if (!text) throw new Error("Kein QR-Code im Foto gefunden. Bitte näher heran und scharf fotografieren.");
+    notice("camera-msg");
+    handleText(text);
+  } catch (e) {
+    notice("camera-msg", "err", esc(e.message));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+$("manual-form").onsubmit = e => { e.preventDefault(); handleText($("manual").value); };
+
+// ---------- Decoding & result ----------
+async function handleText(text) {
+  notice("decode-msg");
+  $("manual").value = text;
+  try {
+    current = await api("api/decode", { text });
+    renderResult();
+    $("result-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) {
+    current = null;
+    $("result-card").classList.add("hidden");
+    notice("decode-msg", "err", esc(e.message));
+  }
+}
+
+function renderResult() {
+  const r = current;
+  $("result-card").classList.remove("hidden");
+  notice("action-msg");
+  $("result-qr").innerHTML = r.qrSvg || "";
+  document.querySelector(".result-grid").classList.toggle("noqr", !r.qrSvg);
+  const details = [];
+  const tags = [];
+  let convert = "";
+
+  if (r.kind === "homekit") {
+    const h = r.homekit;
+    $("result-title").textContent = "HomeKit-Gerät (Apple Home)";
+    $("result-code").textContent = h.setupCode;
+    $("result-code-label").textContent = "HomeKit-Setup-Code";
+    tags.push("HomeKit");
+    if (h.categoryName) tags.push(h.categoryName);
+    if (h.flags?.ip) tags.push("WLAN / Ethernet / Thread");
+    if (h.flags?.ble) tags.push("Bluetooth");
+    if (h.flags?.nfc) tags.push("NFC");
+    if (h.setupId) details.push(["Setup-ID", h.setupId]);
+    if (h.category !== undefined) details.push(["Kategorie", `${h.categoryName} (${h.category})`]);
+    if (h.uri) details.push(["QR-Inhalt", h.uri]);
+    if (h.insecure) details.push(["Hinweis", "Einfacher Code – wird trotzdem akzeptiert"]);
+    convert = `<div class="notice info"><b>In einen Matter-Code umwandeln?</b> Nicht möglich: Dieser Code gehört zum
+      HomeKit-Protokoll. Ein Matter-Code ist kein anderes Format desselben Codes, sondern setzt voraus, dass das Gerät
+      selbst Matter spricht. Steht auf dem Gerät zusätzlich ein Matter-Symbol oder ein <span class="mono">MT:</span>-QR-Code,
+      scanne diesen. Sonst: Gerät hier per HomeKit in Home Assistant einbinden und bei Bedarf über die
+      <b>Matter Bridge</b> als Matter-Gerät weitergeben.</div>`;
+    renderHomeKitActions();
+  } else {
+    const m = r.matter;
+    $("result-title").textContent = "Matter-Gerät";
+    $("result-code").textContent = m.manualCodeFormatted;
+    $("result-code-label").textContent = "Manueller Matter-Kopplungscode";
+    tags.push("Matter");
+    for (const d of m.discovery || []) tags.push(d);
+    if (m.vendorId) details.push(["Hersteller-ID (VID)", `${m.vendorId} (0x${m.vendorId.toString(16).toUpperCase().padStart(4, "0")})`]);
+    if (m.productId) details.push(["Produkt-ID (PID)", `${m.productId} (0x${m.productId.toString(16).toUpperCase().padStart(4, "0")})`]);
+    details.push(["Discriminator", m.shortDiscriminator ? `${m.discriminator} (Kurzform)` : m.discriminator]);
+    details.push(["Setup-PIN", String(m.passcode).padStart(8, "0")]);
+    details.push(["Kopplungsablauf", ["Standard", "Benutzeraktion nötig", "Herstellerspezifisch"][m.commissioningFlow] || m.commissioningFlow]);
+    if (m.qrCode) details.push(["QR-Inhalt", m.qrCode]);
+    convert = r.source === "qr"
+      ? `<div class="notice ok">Umgewandelt: Der QR-Code entspricht dem manuellen Code <b class="mono">${esc(m.manualCodeFormatted)}</b>
+         – diesen kannst du in jeder Matter-App (Google Home, Alexa, SmartThings …) eintippen.</div>`
+      : `<div class="notice info">Codes aus Apple Home („Kopplungsmodus aktivieren“) gelten 15 Minuten und
+         können einmalig für einen weiteren Controller verwendet werden.</div>`;
+    renderMatterActions();
+  }
+  $("result-tags").innerHTML = tags.map(t => `<span class="pill">${esc(t)}</span>`).join("");
+  $("result-details").innerHTML = details.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  $("result-convert").innerHTML = convert;
+}
+
+// ---------- HomeKit pairing ----------
+function renderHomeKitActions() {
+  $("result-actions").innerHTML = `
+    <h3>Zu Home Assistant hinzufügen (HomeKit Controller)</h3>
+    <p class="muted">Ein HomeKit-Gerät kann nur mit <b>einem</b> System gekoppelt sein. Entferne es vorher aus der
+      Home-App (Gerät → Einstellungen → Gerät entfernen) bzw. setze es zurück.</p>
+    <div class="row"><button id="hk-search">🔎 Gerät im Netzwerk suchen</button>
+      <button class="secondary" id="hk-direct">Direkt koppeln</button></div>
+    <div id="hk-devices" class="devices" style="margin-top:12px"></div>`;
+  $("hk-search").onclick = searchHomeKit;
+  $("hk-direct").onclick = () => pairHomeKit({});
+}
+
+async function searchHomeKit() {
+  $("hk-search").disabled = true;
+  notice("action-msg", "info", busy("Suche HomeKit-Geräte im Netzwerk …"));
+  try {
+    const { devices } = await api("api/homekit/discover", { setupId: current.homekit.setupId });
+    notice("action-msg");
+    if (!devices.length) {
+      $("hk-devices").innerHTML = `<div class="notice warn">Kein HomeKit-Gerät im Netzwerk gefunden. Bluetooth-Geräte
+        sind hier nicht sichtbar – nutze <b>Direkt koppeln</b>, Home Assistant sucht dann selbst.</div>`;
+      return;
+    }
+    const match = devices.find(d => d.matches);
+    const list = devices.map((d, i) => {
+      const state = d.pairable === false ? `<span class="warn">bereits gekoppelt (z. B. mit Apple Home)</span>`
+        : d.pairable ? `<span class="ok">bereit zum Koppeln</span>` : "";
+      return `<label class="${d.matches ? "match" : ""}"><input type="radio" name="hk-dev" value="${i}" ${d === match || (!match && i === 0) ? "checked" : ""}>
+        <span><b>${esc(d.name)}</b>${d.matches ? ` <span class="pill">passt zum QR-Code</span>` : ""}<br>
+        <span class="muted">${esc([d.categoryName, d.model, d.transport === "Thread" ? "Thread" : "WLAN/LAN", d.id].filter(Boolean).join(" · "))}</span><br>${state}</span></label>`;
+    }).join("");
+    let hint = "";
+    if (match?.pairable === false)
+      hint = `<div class="notice warn">Das passende Gerät ist noch mit einem anderen Controller gekoppelt. Entferne es zuerst aus
+        Apple Home, warte kurz und suche dann erneut.</div>`;
+    else if (!match && current.homekit.setupId)
+      hint = `<div class="notice info">Kein Gerät passt eindeutig zum QR-Code (gekoppelte Geräte, Thread- und
+        Bluetooth-Geräte melden das nicht immer). Bitte das richtige Gerät auswählen.</div>`;
+    $("hk-devices").innerHTML = hint + list + `<div class="row" style="margin-top:8px"><button id="hk-pair">Ausgewähltes Gerät koppeln</button></div>`;
+    $("hk-pair").onclick = () => {
+      const sel = document.querySelector('input[name="hk-dev"]:checked');
+      const d = devices[Number(sel?.value ?? 0)];
+      pairHomeKit({ deviceName: d.name, deviceId: d.id });
+    };
+  } catch (e) {
+    notice("action-msg", "err", esc(e.message));
+  } finally {
+    const b = $("hk-search"); if (b) b.disabled = false;
+  }
+}
+
+async function pairHomeKit(extra) {
+  document.querySelectorAll("#result-actions button").forEach(b => (b.disabled = true));
+  notice("action-msg", "info", busy("Kopple mit Home Assistant … (kann bis zu einer Minute dauern)"));
+  try {
+    const r = await api("api/homekit/pair", { setupCode: current.homekit.setupCode, ...extra });
+    handlePairResult(r);
+  } catch (e) {
+    notice("action-msg", "err", esc(e.message));
+  } finally {
+    document.querySelectorAll("#result-actions button").forEach(b => (b.disabled = false));
+  }
+}
+
+function handlePairResult(r) {
+  if (r.status === "paired") {
+    notice("action-msg", "ok", `<b>${esc(r.title)}</b> wurde zu Home Assistant hinzugefügt. Du findest es unter
+      Einstellungen → Geräte &amp; Dienste → HomeKit Device.`);
+  } else if (r.status === "choose") {
+    if (!r.options.length) { notice("action-msg", "warn", "Home Assistant hat keine koppelbaren Geräte gefunden."); return; }
+    notice("action-msg", "info", `${esc(r.message)}
+      <div class="devices" style="margin-top:8px">${r.options.map((o, i) =>
+        `<label><input type="radio" name="hk-opt" value="${i}" ${i === 0 ? "checked" : ""}><span>${esc(o.label)}</span></label>`).join("")}</div>
+      <div class="row"><button id="hk-opt-ok">Koppeln</button><button class="secondary" id="hk-opt-cancel">Abbrechen</button></div>`);
+    $("hk-opt-ok").onclick = () => {
+      const sel = document.querySelector('input[name="hk-opt"]:checked');
+      pairHomeKit({ flowId: r.flowId, deviceName: r.options[Number(sel?.value ?? 0)].value });
+    };
+    $("hk-opt-cancel").onclick = async () => { await api("api/homekit/cancel", { flowId: r.flowId }).catch(() => {}); notice("action-msg"); };
+  } else {
+    notice("action-msg", "err", esc(r.message));
+  }
+}
+
+// ---------- Matter commissioning ----------
+function renderMatterActions() {
+  const fromApple = current.source === "code";
+  $("result-actions").innerHTML = `
+    <h3>Zu Home Assistant hinzufügen (Matter)</h3>
+    <label class="check"><input type="checkbox" id="mt-network" ${fromApple ? "checked" : ""}>
+      <span>Gerät ist schon im Netzwerk (in Apple Home eingerichtet und per Kopplungsmodus geteilt)</span></label>
+    <p class="muted" id="mt-hint"></p>
+    <button id="mt-add">Zu Home Assistant hinzufügen</button>`;
+  const hint = () => $("mt-hint").textContent = $("mt-network").checked
+    ? "Home Assistant wird als zusätzlicher Controller hinzugefügt, das Gerät bleibt in Apple Home."
+    : "Neues, noch nicht eingerichtetes Gerät: Der Matter-Server braucht dafür Bluetooth und die WLAN- bzw. Thread-Zugangsdaten (in Home Assistant hinterlegt).";
+  $("mt-network").onchange = hint;
+  hint();
+  if (haStatus && haStatus.matter === "missing")
+    notice("action-msg", "warn", "Die Matter-Integration ist in Home Assistant noch nicht eingerichtet.");
+  $("mt-add").onclick = async () => {
+    $("mt-add").disabled = true;
+    notice("action-msg", "info", busy("Gerät wird in Home Assistant eingebunden … (bis zu 2 Minuten)"));
+    try {
+      const code = current.matter.qrCode || current.matter.manualCode;
+      const r = await api("api/matter/commission", { code, networkOnly: $("mt-network").checked });
+      if (r.status === "commissioned")
+        notice("action-msg", "ok", "Fertig! Das Gerät erscheint unter Einstellungen → Geräte &amp; Dienste → Matter.");
+      else notice("action-msg", "err", esc(r.message));
+    } catch (e) {
+      notice("action-msg", "err", esc(e.message));
+    } finally {
+      $("mt-add").disabled = false;
+    }
+  };
+}
+</script>
+</body>
+</html>

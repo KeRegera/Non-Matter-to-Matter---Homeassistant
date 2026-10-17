@@ -1,0 +1,7 @@
+configuration:
+  log_level:
+    name: Log-Level
+    description: Ausführlichkeit der Protokollierung.
+  discovery_seconds:
+    name: Suchdauer (Sekunden)
+    description: Wie lange im Netzwerk nach HomeKit-Geräten gesucht wird (2–15 Sekunden).

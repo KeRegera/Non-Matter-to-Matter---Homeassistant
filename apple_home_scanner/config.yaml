@@ -1,0 +1,24 @@
+name: Apple Home Scanner
+version: "1.0.0"
+slug: apple_home_scanner
+description: Apple-Home-, HomeKit- und Matter-Codes scannen, umwandeln und Geräte direkt zu Home Assistant hinzufügen
+url: https://github.com/KeRegera/Non-Matter-to-Matter---Homeassistant
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# mDNS on the local network is needed to find the HomeKit accessory that belongs to a scanned QR code
+host_network: true
+homeassistant_api: true
+ingress: true
+ingress_port: 0
+panel_icon: mdi:qrcode-scan
+panel_title: Apple Home Scanner
+options:
+  log_level: info
+  discovery_seconds: 5
+schema:
+  log_level: list(debug|info|warning|error)
+  discovery_seconds: int(2,15)

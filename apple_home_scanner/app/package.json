@@ -1,0 +1,28 @@
+{
+  "name": "ha-apple-home-scanner",
+  "version": "1.0.0",
+  "description": "Scans Apple Home / HomeKit / Matter setup codes and adds the devices to Home Assistant",
+  "type": "module",
+  "main": "dist/index.js",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "start": "node dist/index.js",
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "jsqr": "1.4.0",
+    "multicast-dns": "7.2.5",
+    "qrcode": "1.5.4",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/multicast-dns": "7.2.4",
+    "@types/node": "22.18.0",
+    "@types/qrcode": "1.5.5",
+    "@types/ws": "8.18.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,4 +1,13 @@
-# Non-Matter to Matter – Home Assistant Add-on
+# Non-Matter to Matter – Home Assistant Add-ons
+
+Dieses Repository enthält zwei Apps (Add-ons):
+
+| App | Zweck |
+| --- | --- |
+| **Matter Bridge** | Stellt beliebige Home-Assistant-Geräte als Matter-Geräte bereit |
+| **Apple Home Scanner** | Scannt Apple-Home-/HomeKit-/Matter-QR-Codes, wandelt Matter-Codes um und fügt Geräte direkt zu Home Assistant hinzu ([Anleitung](apple_home_scanner/DOCS.md)) |
+
+## Matter Bridge
 
 Ein Home-Assistant-OS-Add-on, das **beliebige Home-Assistant-Geräte als Matter-Geräte bereitstellt** – inklusive
 der jeweiligen Gerätefunktionen (Helligkeit, Farbe, Farbtemperatur, Position, Neigung, Thermostatmodi,
@@ -10,7 +19,7 @@ in Apple Home, Google Home, Amazon Alexa oder SmartThings nutzen.
 1. In Home Assistant **Einstellungen → Add-ons → Add-on-Store** öffnen.
 2. Oben rechts **⋮ → Repositories** wählen und diese URL hinzufügen:
    `https://github.com/KeRegera/Non-Matter-to-Matter---Homeassistant`
-3. Das Add-on **Matter Bridge** installieren und starten.
+3. Das Add-on **Matter Bridge** (bzw. **Apple Home Scanner**) installieren und starten.
 4. Die Web-Oberfläche öffnen, Geräte auswählen und den QR-Code mit der Controller-App scannen.
 
 Die ausführliche Anleitung mit allen unterstützten Gerätetypen steht in
@@ -20,6 +29,7 @@ Die ausführliche Anleitung mit allen unterstützten Gerätetypen steht in
 
 ```
 repository.yaml            Add-on-Repository-Beschreibung
+apple_home_scanner/        App „Apple Home Scanner“ (QR-Scanner, HomeKit-/Matter-Kopplung)
 matter_bridge/
   config.yaml              Add-on-Konfiguration (Host-Netzwerk, Ingress, Optionen)
   Dockerfile, build.yaml   Image-Build auf Basis der Home-Assistant-Base-Images
