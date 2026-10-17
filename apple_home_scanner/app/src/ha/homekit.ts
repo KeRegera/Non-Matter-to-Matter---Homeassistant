@@ -1,5 +1,6 @@
 import { formatSetupCode } from "../codes/homekit.js";
 import { log } from "../log.js";
+import { discoverHapDevices } from "../mdns.js";
 import type { HomeAssistantClient } from "./client.js";
 
 const HANDLER = "homekit_controller";
@@ -22,7 +23,7 @@ export interface Option {
 export type PairResult =
     | { status: "paired"; title: string }
     | { status: "choose"; flowId: string; options: Option[]; message: string }
-    | { status: "error"; message: string; reason?: string };
+    | { status: "error"; message: string; reason?: string; details?: string };
 
 interface FlowResult {
     type: "form" | "create_entry" | "abort" | "menu" | "progress" | "external" | string;
@@ -65,20 +66,52 @@ function errorMessage(reason: string | undefined, placeholders?: Record<string, 
     return ERRORS[reason] ?? `Home Assistant meldet: ${reason}${placeholders?.error ? ` (${placeholders.error})` : ""}`;
 }
 
-/** Extracts the select options of a form field from a serialized voluptuous schema. */
+/** Extracts the select options of a form field from a serialized schema (several serializer formats supported). */
 export function selectOptions(schema: any[] | undefined, field: string): Option[] {
-    const entry = schema?.find(s => s?.name === field);
-    const raw = entry?.options ?? entry?.selector?.select?.options;
-    if (!raw) return [];
+    const list = Array.isArray(schema) ? schema : schema && typeof schema === "object" ? Object.values(schema) : [];
+    const entry: any = list.find((s: any) => s?.name === field || s?.key === field);
+    if (!entry) return [];
+    const candidates = [
+        entry.options,
+        entry.selector?.select?.options,
+        entry.enum,
+        entry.values,
+        entry.choices,
+        entry.oneOf,
+        entry.anyOf,
+        entry.schema?.enum,
+        entry.schema?.options,
+    ];
+    for (const raw of candidates) {
+        const options = parseOptions(raw);
+        if (options.length) return options;
+    }
+    return [];
+}
+
+function parseOptions(raw: unknown): Option[] {
+    if (!raw || typeof raw !== "object") return [];
     if (Array.isArray(raw))
-        return raw.map(o =>
-            Array.isArray(o)
-                ? { value: String(o[0]), label: String(o[1] ?? o[0]) }
-                : typeof o === "object"
-                  ? { value: String(o.value), label: String(o.label ?? o.value) }
-                  : { value: String(o), label: String(o) },
-        );
-    return Object.entries(raw).map(([value, label]) => ({ value, label: String(label) }));
+        return raw
+            .map(o => {
+                if (Array.isArray(o)) return { value: String(o[0]), label: String(o[1] ?? o[0]) };
+                if (o && typeof o === "object") {
+                    const value = (o as any).value ?? (o as any).const ?? (o as any).key;
+                    if (value === undefined) return undefined;
+                    return { value: String(value), label: String((o as any).label ?? (o as any).title ?? value) };
+                }
+                return { value: String(o), label: String(o) };
+            })
+            .filter((o): o is Option => !!o);
+    return Object.entries(raw as Record<string, unknown>).map(([value, label]) => ({ value, label: String(label ?? value) }));
+}
+
+function brief(result: unknown) {
+    try {
+        return JSON.stringify(result).slice(0, 1500);
+    } catch {
+        return String(result);
+    }
 }
 
 export class HomeKitPairing {
@@ -104,11 +137,30 @@ export class HomeKitPairing {
             handler: HANDLER,
             show_advanced_options: false,
         });
-        if (start.type === "abort") return { status: "error", reason: start.reason, message: errorMessage(start.reason) };
+        log.debug(`HomeKit flow started: ${brief(start)}`);
+        if (start.type === "abort")
+            return { status: "error", reason: start.reason, message: errorMessage(start.reason), details: brief(start) };
         if (start.type !== "form" || start.step_id !== "user")
             return this.#unexpected(start, true);
 
-        const options = selectOptions(start.data_schema, "device");
+        let options = selectOptions(start.data_schema, "device");
+        if (!options.length) {
+            // Unknown schema format: fall back to the pairable accessories we see on the network ourselves.
+            // Their mDNS names are exactly the names Home Assistant uses as option values.
+            log.warn(`Could not read the device list from Home Assistant: ${brief(start.data_schema)}`);
+            options = (await discoverHapDevices(3))
+                .filter(d => d.pairable !== false)
+                .map(d => ({ value: d.name, label: d.categoryName ? `${d.name} (${d.categoryName})` : d.name }));
+        }
+        if (!options.length) {
+            await this.cancel(start.flow_id);
+            return {
+                status: "error",
+                message:
+                    "Home Assistant hat kein koppelbares HomeKit-Gerät gefunden. Ist das Gerät eingeschaltet, im selben Netzwerk und aus Apple Home entfernt (bzw. zurückgesetzt)?",
+                details: brief(start),
+            };
+        }
         const wanted = request.deviceName ? options.find(o => o.value === request.deviceName) : undefined;
         if (wanted) return this.#selectDevice(start.flow_id, wanted.value, code, true);
 
@@ -166,12 +218,23 @@ export class HomeKitPairing {
             if (discovered) return this.#submitCode(discovered, code, false);
         }
         if (result.type === "abort")
-            return { status: "error", reason: result.reason, message: errorMessage(result.reason, result.description_placeholders) };
+            return {
+                status: "error",
+                reason: result.reason,
+                message: errorMessage(result.reason, result.description_placeholders),
+                details: brief(result),
+            };
         if (result.type === "form" && result.step_id === "pair") return this.#submitCode(result.flow_id, code, owned);
         return this.#unexpected(result, owned);
     }
 
-    async #submitCode(flowId: string, code: string, owned: boolean, allowInsecure = false): Promise<PairResult> {
+    async #submitCode(
+        flowId: string,
+        code: string,
+        owned: boolean,
+        allowInsecure = false,
+        attempt = 0,
+    ): Promise<PairResult> {
         log.info(`Sending HomeKit setup code to flow ${flowId}`);
         const body: Record<string, unknown> = { pairing_code: code };
         if (allowInsecure) body.allow_insecure_setup_codes = true;
@@ -181,21 +244,39 @@ export class HomeKitPairing {
             body,
             180_000,
         );
+        log.debug(`HomeKit flow ${flowId} answered: ${brief(result)}`);
 
         if (result.type === "create_entry") {
             log.info(`HomeKit device paired: ${result.title}`);
             return { status: "paired", title: result.title ?? "HomeKit-Gerät" };
         }
         if (result.type === "abort")
-            return { status: "error", reason: result.reason, message: errorMessage(result.reason, result.description_placeholders) };
+            return {
+                status: "error",
+                reason: result.reason,
+                message: errorMessage(result.reason, result.description_placeholders),
+                details: brief(result),
+            };
 
         if (result.type === "form") {
             const error = result.errors ? Object.values(result.errors)[0] : undefined;
             // The user scanned the code printed on the device, so a "simple" code is still the right code
-            if (error === "insecure_setup_code" && !allowInsecure) return this.#submitCode(flowId, code, owned, true);
+            if (error === "insecure_setup_code" && !allowInsecure)
+                return this.#submitCode(flowId, code, owned, true, attempt);
+            // A flow created by Home Assistant's own discovery only starts the pairing session when the first code
+            // arrives and then shows the same form again (the code is dropped) - so the code has to be sent twice.
+            if (result.step_id === "pair" && !error && attempt < 2) {
+                log.info("Pairing session started, sending the setup code again");
+                return this.#submitCode(flowId, code, owned, allowInsecure, attempt + 1);
+            }
             if (result.step_id === "pair" && error) {
                 if (owned) await this.cancel(flowId);
-                return { status: "error", reason: error, message: errorMessage(error, result.description_placeholders) };
+                return {
+                    status: "error",
+                    reason: error,
+                    message: errorMessage(error, result.description_placeholders),
+                    details: brief(result),
+                };
             }
             if (["busy_error", "max_tries_error", "protocol_error"].includes(result.step_id ?? "")) {
                 if (owned) await this.cancel(flowId);
@@ -211,6 +292,7 @@ export class HomeKitPairing {
         return {
             status: "error",
             message: `Unerwartete Antwort von Home Assistant (${result.type}${result.step_id ? ` / ${result.step_id}` : ""}). Bitte über Einstellungen → Geräte & Dienste → HomeKit-Gerät hinzufügen versuchen.`,
+            details: brief(result),
         };
     }
 }

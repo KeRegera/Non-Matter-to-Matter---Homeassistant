@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Behoben: HomeKit-Kopplung schlug fehl, wenn Home Assistant das Gerät bereits selbst entdeckt hatte – der
+  Setup-Code wird jetzt erneut gesendet, sobald die Kopplungssitzung gestartet ist.
+- Behoben: „Direkt koppeln“ zeigte keine Geräte, wenn Home Assistant die Geräteliste in einem anderen Format
+  liefert. Die App liest jetzt mehrere Formate und nutzt notfalls die eigene Netzwerksuche.
+- Fehlermeldungen enthalten jetzt „Technische Details“ (Antwort von Home Assistant), Fehler stehen auch im Log.
+
 ## 1.0.0
 
 - Erste Version

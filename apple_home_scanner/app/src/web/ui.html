@@ -397,7 +397,9 @@ function handlePairResult(r) {
     };
     $("hk-opt-cancel").onclick = async () => { await api("api/homekit/cancel", { flowId: r.flowId }).catch(() => {}); notice("action-msg"); };
   } else {
-    notice("action-msg", "err", esc(r.message));
+    notice("action-msg", "err", esc(r.message) + (r.details
+      ? `<details style="margin-top:6px"><summary class="muted">Technische Details</summary><pre class="mono" style="white-space:pre-wrap;font-size:12px;margin:6px 0 0">${esc(r.details)}</pre></details>`
+      : ""));
   }
 }
 

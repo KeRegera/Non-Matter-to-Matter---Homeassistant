@@ -1,5 +1,5 @@
 name: Apple Home Scanner
-version: "1.0.0"
+version: "1.0.1"
 slug: apple_home_scanner
 description: Apple-Home-, HomeKit- und Matter-Codes scannen, umwandeln und Geräte direkt zu Home Assistant hinzufügen
 url: https://github.com/KeRegera/Non-Matter-to-Matter---Homeassistant

@@ -8,7 +8,14 @@ const flows = new Map();
 let nextFlow = 1;
 const DEVICES = [["Eve Energy 1A2B", "Eve Energy 1A2B (Outlet)"], ["Hue Bridge", "Hue Bridge (Bridge)"]];
 // A "discovered" flow like the one Home Assistant creates via zeroconf
-flows.set("disc1", { step: "pair", device: "Nanoleaf Strip", uniqueId: "aa:bb:cc:dd:ee:ff" });
+// Like real HA, the zeroconf flow has not started the pairing session yet: the first submitted code is dropped
+flows.set("disc1", { step: "pair", device: "Nanoleaf Strip", uniqueId: "aa:bb:cc:dd:ee:ff", started: false });
+// MOCK_SCHEMA=selector|none simulates other serializations of the device list
+const schemaMode = process.env.MOCK_SCHEMA ?? "tuples";
+const deviceSchema = () =>
+  schemaMode === "selector" ? [{ name: "device", required: true, selector: { select: { options: DEVICES.map(([value, label]) => ({ value, label })) } } }]
+  : schemaMode === "none" ? [{ name: "device", required: true, type: "string" }]
+  : [{ name: "device", type: "select", required: true, options: DEVICES }];
 
 const form = (id, step, extra = {}) => ({ type: "form", flow_id: id, handler: "homekit_controller", step_id: step, errors: {}, ...extra });
 
@@ -17,10 +24,11 @@ function flowStep(id, body) {
   if (!flow) return [404, { message: "Flow not found" }];
   if (flow.step === "user") {
     if (!DEVICES.some(d => d[0] === body.device)) return [400, { message: "invalid device" }];
-    flow.device = body.device; flow.step = "pair";
+    flow.device = body.device; flow.step = "pair"; flow.started = true;
     return [200, form(id, "pair", { data_schema: [{ name: "pairing_code", type: "string", required: true }] })];
   }
   if (flow.step === "pair") {
+    if (!flow.started) { flow.started = true; return [200, form(id, "pair")]; }
     const code = String(body.pairing_code ?? "");
     if (code === "123-45-678" && !body.allow_insecure_setup_codes)
       return [200, form(id, "pair", { errors: { pairing_code: "insecure_setup_code" } })];
@@ -47,7 +55,7 @@ const server = createServer((req, res) => {
       const id = `f${nextFlow++}`;
       flows.set(id, { step: "user" });
       console.log(`[mock] flow ${id} started`);
-      return send(200, form(id, "user", { data_schema: [{ name: "device", type: "select", required: true, options: DEVICES }] }));
+      return send(200, form(id, "user", { data_schema: deviceSchema() }));
     }
     if (m[1] && req.method === "GET") {
       const flow = flows.get(m[1]);

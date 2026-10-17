@@ -90,16 +90,20 @@ export function startWebServer(port: number, deps: ServerDeps) {
             const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 200) : undefined);
             const setupCode = str(body.setupCode);
             if (!setupCode) return json(res, 400, { error: "setupCode fehlt" });
-            json(
-                res,
-                200,
-                await deps.homekit.pair({
+            let result;
+            try {
+                result = await deps.homekit.pair({
                     setupCode,
                     deviceName: str(body.deviceName),
                     deviceId: str(body.deviceId),
                     flowId: str(body.flowId),
-                }),
-            );
+                });
+            } catch (e) {
+                const message = e instanceof Error ? e.message : String(e);
+                result = { status: "error" as const, message: `Kopplung fehlgeschlagen: ${message}` };
+            }
+            if (result.status === "error") log.warn(`HomeKit pairing failed: ${result.message}`, result.details ?? "");
+            json(res, 200, result);
             return;
         }
 
